@@ -5,9 +5,9 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "pack:win": "electron-builder --win",
-    "pack:linux": "electron-builder --linux deb AppImage",
-    "pack:all": "electron-builder --win --linux deb AppImage"
+    "pack:win": "electron-builder --win --publish never",
+    "pack:linux": "electron-builder --linux deb AppImage --publish never",
+    "pack:all": "electron-builder --win --linux deb AppImage --publish never"
   },
   "keywords": [
     "encryption",
