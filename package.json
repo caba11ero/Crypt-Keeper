@@ -15,7 +15,7 @@
     "markdown",
     "security"
   ],
-  "author": "Antigravity Dev Team",
+  "author": "caba11ero <avedp@proton.me>",
   "license": "MIT",
   "devDependencies": {
     "electron": "^31.0.0",
