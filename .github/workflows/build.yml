@@ -28,6 +28,8 @@ jobs:
         run: npm install
 
       - name: Build Electron Installers
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             npm run pack:linux
