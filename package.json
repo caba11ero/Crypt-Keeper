@@ -1,0 +1,53 @@
+{
+  "name": "cryptkeeper",
+  "version": "1.0.0",
+  "description": "Secure Client-Side Encrypted Notes Application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack:win": "electron-builder --win",
+    "pack:linux": "electron-builder --linux deb AppImage",
+    "pack:all": "electron-builder --win --linux deb AppImage"
+  },
+  "keywords": [
+    "encryption",
+    "notes",
+    "markdown",
+    "security"
+  ],
+  "author": "Antigravity Dev Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.cryptkeeper.app",
+    "productName": "CryptKeeper",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.png"
+    },
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "icon.png"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "style.css",
+      "crypto.js",
+      "app.js",
+      "main.js",
+      "icon.png"
+    ]
+  }
+}

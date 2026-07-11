@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptKeeper - Secure Encrypted Notes</title>
+    <meta name="description" content="A state-of-the-art client-side encrypted notes application. Your privacy is guaranteed using AES-256-GCM.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+</head>
+<body>
+
+    <!-- Ambient Glow Backgrounds -->
+    <div class="ambient-bg">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- LOCK / SETUP SCREEN -->
+    <div id="lock-screen" class="screen-container">
+        <div class="lock-card glass-panel">
+            <div class="lock-logo">
+                <!-- SVG: Shield Lock -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </div>
+            <h1 id="lock-title">Unlock CryptKeeper</h1>
+            <p id="lock-subtitle">Enter your master password to decrypt your workspace.</p>
+
+            <form id="lock-form" class="lock-form" onsubmit="return false;">
+                <!-- Password Field -->
+                <div class="input-group">
+                    <input type="password" id="master-password" class="input-field" placeholder="Master Password" required autocomplete="current-password">
+                    <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <button type="button" class="btn-toggle-password" id="toggle-lock-password" aria-label="Toggle password visibility">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Setup Specific: Confirm Password -->
+                <div id="setup-confirm-group" class="input-group" style="display: none;">
+                    <input type="password" id="confirm-master-password" class="input-field" placeholder="Confirm Password" autocomplete="new-password">
+                    <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                </div>
+
+                <!-- Password Strength Meter (setup only) -->
+                <div id="password-strength-container" class="password-strength" style="display: none;">
+                    <div class="strength-bars">
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                    </div>
+                    <span id="strength-text" class="strength-text">Password Strength: Weak</span>
+                </div>
+
+                <button type="submit" id="btn-unlock" class="btn-primary">Unlock Notes</button>
+            </form>
+
+            <!-- File Authorization Section (hidden by default) -->
+            <div id="external-auth-section" class="lock-form" style="display: none; flex-direction: column; gap: 1rem; align-items: stretch; margin-top: 1rem;">
+                <p class="settings-desc" style="font-size: 0.9rem; text-align: center; color: var(--text-primary); margin-bottom: 0.5rem;">
+                    This vault is stored in an external file:<br>
+                    <strong id="auth-file-name" style="color: var(--primary-hover); word-break: break-all;"></strong>
+                </p>
+                <button type="button" id="btn-auth-file" class="btn-primary">Authorize File Access</button>
+                <button type="button" id="btn-auth-fallback" class="btn-secondary" style="font-size: 0.85rem; padding: 0.5rem;">Switch back to Local Storage</button>
+            </div>
+
+            <div id="unlocking-loader" class="unlocking-indicator">
+                <div class="spinner"></div>
+                <span id="loader-text">Deriving keys securely...</span>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MAIN WORKSPACE -->
+    <div id="app-workspace" class="app-container">
+        
+        <!-- 1. Collapsible Sidebar Pane (Tags, Settings & Lock) -->
+        <aside class="sidebar glass-panel">
+            <div class="logo-section">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <h2>CryptKeeper</h2>
+            </div>
+
+            <div class="menu-title">Library</div>
+            <ul class="sidebar-menu">
+                <li id="menu-all-notes" class="menu-item active">
+                    <button id="btn-filter-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        All Notes
+                    </button>
+                </li>
+            </ul>
+
+            <div class="menu-title">Tags</div>
+            <ul id="tag-list" class="sidebar-menu" style="flex-grow: 1;">
+                <!-- Tag items dynamically generated here -->
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="menu-item">
+                    <button id="btn-drawer-settings">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                        Settings & Backups
+                    </button>
+                </div>
+                <div class="menu-item">
+                    <button id="btn-lock-app" style="color: var(--danger-hover);">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        Lock Database
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 2. Notes List Panel -->
+        <section class="notes-list-panel">
+            <div class="search-section">
+                <button id="btn-new-note" class="btn-new-note">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    New Note
+                </button>
+                <div class="notes-search-wrapper">
+                    <input type="text" id="notes-search" class="notes-search-input" placeholder="Search decrypted notes...">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Notes List Scroll Container -->
+            <div id="notes-container" class="notes-scroll-container">
+                <!-- Notes cards dynamically injected here -->
+            </div>
+        </section>
+
+        <!-- 3. Active Note Editor Panel -->
+        <main class="editor-panel">
+            <!-- Normal Editor State -->
+            <div id="editor-active-state" style="display: flex; flex-direction: column; flex-grow: 1;">
+                <div class="editor-header">
+                    <div class="editor-header-left">
+                        <input type="text" id="note-title" class="note-title-input" placeholder="Untitled Note">
+                    </div>
+                    <div class="editor-header-actions">
+                        <!-- Action: Export single note -->
+                        <button id="btn-export-note" class="btn-icon" title="Export raw Markdown text">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                        </button>
+                        <!-- Action: Delete single note -->
+                        <button id="btn-delete-note" class="btn-icon" title="Delete Note" style="color: var(--danger-hover); border-color: rgba(239, 68, 68, 0.2);">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                <line x1="10" y1="11" x2="10" y2="17"></line>
+                                <line x1="14" y1="11" x2="14" y2="17"></line>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editor Toolbar (Tags & Mode Buttons) -->
+                <div class="editor-toolbar">
+                    <div class="editor-tags-wrapper" id="editor-tags-container">
+                        <!-- Tags rendered here -->
+                        <div class="editor-tag-input-wrapper">
+                            <input type="text" id="editor-tag-input" class="editor-tag-input" placeholder="+ Add tag">
+                        </div>
+                    </div>
+
+                    <div class="editor-mode-toggle">
+                        <button id="btn-mode-edit" class="editor-mode-btn active">Write</button>
+                        <button id="btn-mode-split" class="editor-mode-btn">Split</button>
+                        <button id="btn-mode-preview" class="editor-mode-btn">Preview</button>
+                    </div>
+                </div>
+
+                <!-- Workspace Text Editor & Live Preview -->
+                <div id="editor-workspace" class="editor-workspace edit-mode">
+                    <textarea id="note-textarea" class="editor-textarea" placeholder="Start typing... Supports basic Markdown."></textarea>
+                    <div id="note-preview" class="editor-preview"></div>
+                </div>
+
+                <!-- Footer Status Bar -->
+                <div class="editor-footer-status">
+                    <span id="editor-word-count">0 words</span>
+                    <span id="editor-saved-indicator" style="display: none; color: var(--accent-green);">Auto-saved</span>
+                    <span class="encryption-badge">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        AES-256-GCM Secure
+                    </span>
+                </div>
+            </div>
+
+            <!-- Empty Editor State -->
+            <div id="editor-empty-state" class="editor-empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                <p>Select or create a note to begin editing securely.</p>
+            </div>
+        </main>
+    </div>
+
+
+    <!-- 4. MODALS & SLIDE-IN DRAWERS -->
+
+    <!-- Settings Overlay Backdrop -->
+    <div id="settings-overlay" class="drawer-overlay"></div>
+
+    <!-- Settings Drawer -->
+    <div id="settings-drawer" class="drawer-panel">
+        <div class="drawer-header">
+            <h2>Settings & Backup</h2>
+            <button id="btn-close-settings" class="btn-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <div class="drawer-content">
+            <!-- 1. Change Master Password -->
+            <section class="settings-section">
+                <h3>Change Password</h3>
+                <form id="change-password-form" class="lock-form" onsubmit="return false;">
+                    <div class="input-group">
+                        <input type="password" id="change-old-password" class="input-field" placeholder="Current Master Password" required autocomplete="current-password">
+                        <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" id="change-new-password" class="input-field" placeholder="New Master Password" required autocomplete="new-password">
+                        <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                    </div>
+                    <!-- Password Strength Meter -->
+                    <div id="change-password-strength" class="password-strength" style="display: flex;">
+                        <div class="strength-bars">
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                            <div class="strength-bar"></div>
+                        </div>
+                        <span id="change-strength-text" class="strength-text">New Password Strength</span>
+                    </div>
+
+                    <button type="submit" class="btn-primary" style="padding: 0.8rem;">Update Password</button>
+                </form>
+            </section>
+
+            <!-- Storage Location Settings -->
+            <section class="settings-section">
+                <h3>Storage Location</h3>
+                <div class="settings-option">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span class="settings-label">Active Storage:</span>
+                        <span id="storage-type-badge" class="note-card-tag" style="background: var(--bg-surface-active); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;">Browser LocalStorage</span>
+                    </div>
+                    <p class="settings-desc" style="margin-top: 0.5rem; line-height: 1.4;">Select where your encrypted notes are saved. Choosing an external file allows you to store the database in a synced folder (OneDrive, Dropbox, etc.) to automatically sync between computers.</p>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.8rem;">
+                        <button id="btn-storage-local" class="btn-secondary" style="grid-column: 1 / span 2; font-size: 0.85rem; padding: 0.6rem 0.8rem;">Use Local Storage</button>
+                        <button id="btn-storage-open" class="btn-secondary" style="font-size: 0.85rem; padding: 0.6rem 0.8rem;">Open Vault File</button>
+                        <button id="btn-storage-create" class="btn-primary" style="font-size: 0.85rem; padding: 0.6rem 0.8rem; background: var(--primary-glow); border-color: var(--primary); box-shadow: none;">Create Vault File</button>
+                    </div>
+                    <span id="external-file-name" class="settings-desc" style="display: none; margin-top: 0.6rem; word-break: break-all; font-family: var(--font-mono); color: var(--primary-hover); font-size: 0.8rem;"></span>
+                </div>
+            </section>
+
+            <!-- 2. Database Backup & Restore -->
+            <section class="settings-section">
+                <h3>Import & Export Data</h3>
+                
+                <!-- Export Backup Button -->
+                <div class="settings-option">
+                    <span class="settings-label">Export Database Backup</span>
+                    <p class="settings-desc">Download a cryptographically locked JSON file representing all your notes and tags. You can restore this backup using the master password that was active when exported.</p>
+                    <button id="btn-export-db" class="btn-primary" style="background: rgba(255,255,255,0.05); color: var(--text-primary); border-color: var(--border-color); box-shadow: none; margin-top: 0.5rem; gap: 0.5rem; padding: 0.8rem;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Export Encrypted Backup (.json)
+                    </button>
+                </div>
+
+                <!-- Import Backup Dropzone -->
+                <div class="settings-option" style="margin-top: 1rem;">
+                    <span class="settings-label">Import Database Backup</span>
+                    <p class="settings-desc">Upload a `.json` backup file. It will be decrypted and merged with your current library if the imported payload is encrypted with the current master password.</p>
+                    <div id="import-dropzone" class="import-dropzone">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Drag & drop backup file here or <strong>browse files</strong></p>
+                        <input type="file" id="file-import-input" style="display: none;" accept=".json">
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. System Reset (Nuke Database) -->
+            <section class="settings-section">
+                <h3>Danger Zone</h3>
+                <div class="settings-option">
+                    <span class="settings-label" style="color: var(--danger-hover);">Nuke Local Database</span>
+                    <p class="settings-desc">Irreversibly delete all notes, salts, and password validation tokens stored in this browser. Ensure you have exported a backup first.</p>
+                    <button id="btn-nuke-db" class="btn-danger" style="margin-top: 0.5rem;">Delete All Data</button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Confirm / Alert Dialogue Overlay -->
+    <div id="confirm-modal-overlay" class="drawer-overlay" style="z-index: 105;"></div>
+    <div id="confirm-modal" class="modal-wrapper">
+        <div class="modal-card glass-panel">
+            <h3 id="modal-title" class="modal-title">Confirm Action</h3>
+            <p id="modal-message" class="settings-desc" style="font-size: 0.95rem; line-height: 1.5; color: var(--text-primary);">Are you sure you want to proceed with this action?</p>
+            <div class="modal-actions">
+                <button id="btn-confirm-cancel" class="btn-secondary">Cancel</button>
+                <button id="btn-confirm-ok" class="btn-danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Anchor -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Script imports -->
+    <script src="crypto.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
