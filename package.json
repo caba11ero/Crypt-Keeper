@@ -24,6 +24,9 @@
   "build": {
     "appId": "com.cryptkeeper.app",
     "productName": "CryptKeeper",
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
     "win": {
       "target": [
         "nsis"
