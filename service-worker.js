@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cryptkeeper-v1';
+const CACHE_NAME = 'cryptkeeper-v2';
 const ASSETS = [
   './',
   './index.html',

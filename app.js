@@ -13,6 +13,12 @@ if ('serviceWorker' in navigator) {
 }
 
 (function () {
+    // Theme Management - Initialize immediately to prevent flash
+    const savedTheme = localStorage.getItem('cryptkeeper_theme') || 'default';
+    if (savedTheme !== 'default') {
+        document.body.classList.add(`theme-${savedTheme}`);
+    }
+
     // State management
     const state = {
         masterKey: null,         // Derived CryptoKey in memory
@@ -26,7 +32,8 @@ if ('serviceWorker' in navigator) {
         confirmCallback: null,   // Callback for reusable modal
         fileHandle: null,        // [NEW] Active FileSystemFileHandle if in external file mode
         fileSetupPacket: null,   // [NEW] Cached setup block read from external file
-        fileNotesPacket: null    // [NEW] Cached notes block read from external file
+        fileNotesPacket: null,   // [NEW] Cached notes block read from external file
+        theme: savedTheme        // Active theme state
     };
 
     // IndexedDB helper for persisting file handles across browser reloads
@@ -283,6 +290,15 @@ if ('serviceWorker' in navigator) {
             }
         });
 
+        // Paste and Drop images into editor textarea
+        dom.noteTextarea.addEventListener('paste', handleTextareaPaste);
+        dom.noteTextarea.addEventListener('drop', handleTextareaDrop);
+        dom.noteTextarea.addEventListener('dragover', (e) => {
+            if (e.dataTransfer.types.includes('Files')) {
+                e.preventDefault();
+            }
+        });
+
         // Editor layout modes
         dom.btnModeEdit.addEventListener('click', () => setEditorMode('edit'));
         dom.btnModeSplit.addEventListener('click', () => setEditorMode('split'));
@@ -330,6 +346,19 @@ if ('serviceWorker' in navigator) {
         dom.btnStorageLocal.addEventListener('click', handleSwitchToLocalStorage);
         dom.btnStorageOpen.addEventListener('click', handleOpenExternalFile);
         dom.btnStorageCreate.addEventListener('click', handleCreateExternalFile);
+
+        // Theme selection triggers
+        const themeButtons = document.querySelectorAll('.theme-btn');
+        themeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const chosenTheme = btn.dataset.theme;
+                applyTheme(chosenTheme);
+                showToast(`Theme changed to ${btn.querySelector('.theme-name').textContent}`, "success");
+            });
+        });
+
+        // Drag-to-resize image listener
+        document.addEventListener('mousedown', handleImageResizeStart);
 
         // Modal triggers
         dom.btnConfirmCancel.addEventListener('click', closeConfirmModal);
@@ -831,6 +860,7 @@ if ('serviceWorker' in navigator) {
             id: crypto.randomUUID(),
             title: "",
             content: "",
+            attachments: {},
             tags: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
@@ -1048,7 +1078,133 @@ if ('serviceWorker' in navigator) {
      */
     function updateMarkdownPreview() {
         const md = dom.noteTextarea.value;
-        dom.notePreview.innerHTML = parseMarkdown(md);
+        const html = parseMarkdown(md);
+        dom.notePreview.innerHTML = html;
+    }
+
+    function handleTextareaPaste(e) {
+        if (!state.activeNoteId) return;
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        for (let item of items) {
+            if (item.type.indexOf('image') === 0) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                
+                const reader = new FileReader();
+                reader.onload = function (event) {
+                    const dataUrl = event.target.result;
+                    
+                        const note = state.notes.find(n => n.id === state.activeNoteId);
+                    if (note) {
+                        note.attachments = note.attachments || {};
+                        const imgId = `img${Date.now()}${Math.random().toString(36).substring(2, 7)}`;
+                        note.attachments[imgId] = dataUrl;
+                        
+                        insertTextAtCursor(dom.noteTextarea, `\n![Screenshot](attachment:${imgId})\n`);
+                        triggerAutoSave();
+                        updateWordCount();
+                        updateMarkdownPreview();
+                    }
+                };
+                reader.readAsDataURL(file);
+                showToast("Screenshot pasted and stored as attachment.", "success");
+                break;
+            }
+        }
+    }
+
+    function handleTextareaDrop(e) {
+        if (!state.activeNoteId) return;
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const file = files[0];
+            if (file.type.startsWith('image/')) {
+                e.preventDefault();
+                
+                const reader = new FileReader();
+                reader.onload = function (event) {
+                    const dataUrl = event.target.result;
+                    
+                    const note = state.notes.find(n => n.id === state.activeNoteId);
+                    if (note) {
+                        note.attachments = note.attachments || {};
+                        const imgId = `img${Date.now()}${Math.random().toString(36).substring(2, 7)}`;
+                        note.attachments[imgId] = dataUrl;
+                        
+                        insertTextAtCursor(dom.noteTextarea, `\n![${file.name}](attachment:${imgId})\n`);
+                        triggerAutoSave();
+                        updateWordCount();
+                        updateMarkdownPreview();
+                    }
+                };
+                reader.readAsDataURL(file);
+                showToast("Image file dropped and stored as attachment.", "success");
+            }
+        }
+    }
+
+    function insertTextAtCursor(textarea, text) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const val = textarea.value;
+        textarea.value = val.substring(0, start) + text + val.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + text.length;
+        textarea.focus();
+    }
+
+    function handleImageResizeStart(e) {
+        if (!e.target.classList.contains('image-resize-handle')) return;
+        
+        e.preventDefault();
+        const handle = e.target;
+        const imgId = handle.dataset.id;
+        const wrapper = handle.parentElement;
+        
+        const startX = e.clientX;
+        const startWidth = wrapper.offsetWidth;
+        
+        function onMouseMove(moveEvent) {
+            const newWidth = Math.max(100, Math.min(wrapper.parentElement.offsetWidth, startWidth + (moveEvent.clientX - startX)));
+            wrapper.style.width = `${newWidth}px`;
+        }
+        
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            
+            const finalWidth = wrapper.offsetWidth;
+            updateImageSizeInMarkdown(imgId, finalWidth);
+        }
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    }
+
+    function updateImageSizeInMarkdown(imgId, newWidth) {
+        const textarea = dom.noteTextarea;
+        const text = textarea.value;
+        
+        const regex = new RegExp(`!\\\[([^\\\]]*)\\\]\\(attachment:${imgId}\\)`, 'g');
+        const updatedText = text.replace(regex, (match, altAndSize) => {
+            let alt = altAndSize;
+            if (altAndSize.includes('|')) {
+                alt = altAndSize.split('|')[0];
+            }
+            return `![${alt}|${newWidth}](attachment:${imgId})`;
+        });
+        
+        if (text !== updatedText) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            
+            textarea.value = updatedText;
+            textarea.selectionStart = start;
+            textarea.selectionEnd = end;
+            
+            triggerAutoSave();
+            updateWordCount();
+            updateMarkdownPreview();
+        }
     }
 
     function parseMarkdown(md) {
@@ -1056,9 +1212,15 @@ if ('serviceWorker' in navigator) {
             return `<p style="color: var(--text-muted); font-style: italic;">No markdown content to display.</p>`;
         }
 
+        const activeNote = state.activeNoteId ? state.notes.find(n => n.id === state.activeNoteId) : null;
+        const attachments = (activeNote && activeNote.attachments) ? activeNote.attachments : {};
+
         const lines = md.split('\n');
         let html = [];
         let inList = false;
+        let inOrderedList = false;
+        let inBlockquote = false;
+        let inCallout = false;
         let inCode = false;
         let codeContent = [];
 
@@ -1093,6 +1255,48 @@ if ('serviceWorker' in navigator) {
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
 
+            // Images: ![Alt|Width](URL or DataURL or attachment:id)
+            cleanLine = cleanLine.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, altAndSize, src) => {
+                let alt = altAndSize;
+                let width = '';
+                let height = '';
+                
+                // Parse Obsidian-style resizing: ![alt|300] or ![alt|300x200]
+                if (altAndSize.includes('|')) {
+                    const parts = altAndSize.split('|');
+                    alt = parts[0];
+                    const size = parts[1];
+                    if (size.includes('x')) {
+                        const dims = size.split('x');
+                        width = dims[0];
+                        height = dims[1];
+                    } else {
+                        width = size;
+                    }
+                }
+                
+                let style = '';
+                let wrapperStyle = '';
+                if (width) {
+                    const unit = /^[0-9]+$/.test(width) ? 'px' : '';
+                    wrapperStyle += `width: ${width}${unit}; `;
+                }
+                if (height) {
+                    const unit = /^[0-9]+$/.test(height) ? 'px' : '';
+                    style += `height: ${height}${unit}; `;
+                }
+                
+                const styleAttr = style ? `style="${style}"` : '';
+                const wrapperStyleAttr = wrapperStyle ? `style="${wrapperStyle}"` : '';
+
+                if (src.startsWith('attachment:')) {
+                    const imgId = src.replace('attachment:', '');
+                    const dataUrl = attachments[imgId] || '';
+                    return `<div class="image-resize-wrapper" ${wrapperStyleAttr}><img class="note-image" src="${dataUrl}" alt="${alt}" ${styleAttr}><div class="image-resize-handle" data-id="${imgId}"></div></div>`;
+                }
+                return `<div class="image-resize-wrapper" ${wrapperStyleAttr}><img class="note-image" src="${src}" alt="${alt}" ${styleAttr}></div>`;
+            });
+
             // Bold: **text**
             cleanLine = cleanLine.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 
@@ -1106,8 +1310,108 @@ if ('serviceWorker' in navigator) {
             // Links: [Text](URL)
             cleanLine = cleanLine.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-            // Bullet Lists
+            // --- Obsidian-Style Callout Blocks handling ---
+            const isBlockquoteLine = cleanLine.startsWith('&gt; ') || cleanLine === '&gt;';
+            
+            if (!isBlockquoteLine) {
+                if (inCallout) {
+                    inCallout = false;
+                    html.push('</div></div>');
+                }
+                if (inBlockquote) {
+                    inBlockquote = false;
+                    html.push('</blockquote>');
+                }
+            } else if (inCallout) {
+                if (cleanLine.startsWith('&gt; ')) {
+                    const content = cleanLine.substring(5);
+                    html.push(`<p>${content}</p>`);
+                    continue;
+                } else if (cleanLine === '&gt;') {
+                    html.push('<br>');
+                    continue;
+                }
+            }
+
+            // --- List Closing handling ---
+            const orderedListMatch = cleanLine.match(/^[ \t]*([0-9]+)\.\s+(.*)/);
+            const isListItem = cleanLine.trim().startsWith('- ') || cleanLine.trim().startsWith('* ') || orderedListMatch;
+            
+            if (!isListItem) {
+                if (inList) {
+                    inList = false;
+                    html.push('</ul>');
+                }
+                if (inOrderedList) {
+                    inOrderedList = false;
+                    html.push('</ol>');
+                }
+            }
+
+            // --- Element Parsing ---
+
+            // Horizontal Rules: --- or ***
+            if (/^([\s]*[-*_]){3,}[\s]*$/.test(cleanLine.trim())) {
+                html.push('<hr>');
+                continue;
+            }
+
+            // Callout Start: > [!NOTE] Title
+            const calloutMatch = cleanLine.match(/^&gt;\s+\[!([A-Za-z]+)\](.*)/);
+            if (calloutMatch) {
+                if (inBlockquote) {
+                    inBlockquote = false;
+                    html.push('</blockquote>');
+                }
+                const type = calloutMatch[1].toLowerCase();
+                const titleText = calloutMatch[2].trim() || type.toUpperCase();
+                html.push(`<div class="callout callout-${type}">`);
+                html.push(`<div class="callout-header"><span class="callout-icon"></span><span class="callout-title">${titleText}</span></div>`);
+                html.push(`<div class="callout-content">`);
+                inCallout = true;
+                continue;
+            }
+
+            // Regular Blockquotes
+            if (cleanLine.startsWith('&gt; ')) {
+                if (!inBlockquote) {
+                    inBlockquote = true;
+                    html.push('<blockquote>');
+                }
+                html.push(`<p>${cleanLine.substring(5)}</p>`);
+                continue;
+            } else if (cleanLine === '&gt;') {
+                if (!inBlockquote) {
+                    inBlockquote = true;
+                    html.push('<blockquote>');
+                }
+                html.push('<br>');
+                continue;
+            }
+
+            // Checklist Task items: - [ ] or - [x]
+            if (cleanLine.trim().startsWith('- [ ] ') || cleanLine.trim().startsWith('- [x] ') ||
+                cleanLine.trim().startsWith('* [ ] ') || cleanLine.trim().startsWith('* [x] ')) {
+                if (inOrderedList) {
+                    inOrderedList = false;
+                    html.push('</ol>');
+                }
+                if (!inList) {
+                    inList = true;
+                    html.push('<ul class="task-list">');
+                }
+                const isChecked = cleanLine.includes('[x]');
+                const content = cleanLine.replace(/^[\s]*[-*]\s+\[[ x]\]\s+/, '');
+                html.push(`<li class="task-list-item"><input type="checkbox" ${isChecked ? 'checked' : ''} disabled> <span>${content}</span></li>`);
+                continue;
+            }
+
+            // Regular Bullet Lists
             if (cleanLine.trim().startsWith('- ') || cleanLine.trim().startsWith('* ')) {
+                if (inOrderedList) {
+                    inOrderedList = false;
+                    html.push('</ol>');
+                }
                 if (!inList) {
                     inList = true;
                     html.push('<ul>');
@@ -1115,11 +1419,20 @@ if ('serviceWorker' in navigator) {
                 const content = cleanLine.replace(/^[\s]*[-*]\s+/, '');
                 html.push(`<li>${content}</li>`);
                 continue;
-            } else {
+            }
+
+            // Ordered Lists
+            if (orderedListMatch) {
                 if (inList) {
                     inList = false;
                     html.push('</ul>');
                 }
+                if (!inOrderedList) {
+                    inOrderedList = true;
+                    html.push('<ol>');
+                }
+                html.push(`<li>${orderedListMatch[2]}</li>`);
+                continue;
             }
 
             // Headers
@@ -1129,8 +1442,6 @@ if ('serviceWorker' in navigator) {
                 html.push(`<h2>${cleanLine.substring(3)}</h2>`);
             } else if (cleanLine.startsWith('### ')) {
                 html.push(`<h3>${cleanLine.substring(4)}</h3>`);
-            } else if (cleanLine.startsWith('&gt; ')) {
-                html.push(`<blockquote>${cleanLine.substring(5)}</blockquote>`);
             } else if (cleanLine.trim() === '') {
                 html.push('<br>');
             } else {
@@ -1139,7 +1450,10 @@ if ('serviceWorker' in navigator) {
         }
 
         // Close dangling tags
+        if (inCallout) html.push('</div></div>');
+        if (inBlockquote) html.push('</blockquote>');
         if (inList) html.push('</ul>');
+        if (inOrderedList) html.push('</ol>');
         if (inCode) html.push(`<pre><code>${codeContent.join('\n')}</code></pre>`);
 
         return html.join('\n');
@@ -1159,11 +1473,43 @@ if ('serviceWorker' in navigator) {
 
         // [NEW] Update storage location settings displays
         updateStorageUI();
+
+        // Update active theme button highlight
+        const themeButtons = document.querySelectorAll('.theme-btn');
+        themeButtons.forEach(btn => {
+            if (btn.dataset.theme === state.theme) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
     }
 
     function closeSettingsDrawer() {
         dom.settingsOverlay.classList.remove('active');
         dom.settingsDrawer.classList.remove('active');
+    }
+
+    function applyTheme(themeName) {
+        // Remove all theme classes
+        document.body.classList.remove('theme-cyberpunk', 'theme-matrix', 'theme-terminal', 'theme-aurora', 'theme-dracula', 'theme-sakura');
+        
+        if (themeName !== 'default') {
+            document.body.classList.add(`theme-${themeName}`);
+        }
+        
+        state.theme = themeName;
+        localStorage.setItem('cryptkeeper_theme', themeName);
+        
+        // Update active class on buttons
+        const buttons = document.querySelectorAll('.theme-btn');
+        buttons.forEach(btn => {
+            if (btn.dataset.theme === themeName) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
     }
 
     // --- [NEW] External Vault Storage and Re-authorization Handlers ---
@@ -1329,12 +1675,12 @@ if ('serviceWorker' in navigator) {
                         state.masterKey = derivedTestKey;
                     } else {
                         // Empty file. We will write our current database to it immediately!
-                        const rawNotes = JSON.stringify(state.notes);
-                        const enc = await window.CryptKeeper.encryptData(rawNotes, state.masterKey);
-                        
                         const fileSalt = window.CryptKeeper.generateSalt();
                         const fileKey = await window.CryptKeeper.deriveKey(state.masterPassword, fileSalt);
                         const fileEncVal = await window.CryptKeeper.encryptData("CryptKeeper-Session-Valid", fileKey);
+
+                        const rawNotes = JSON.stringify(state.notes);
+                        const enc = await window.CryptKeeper.encryptData(rawNotes, fileKey);
                         
                         const initPayload = {
                             version: 1,
@@ -1349,6 +1695,7 @@ if ('serviceWorker' in navigator) {
                             }
                         };
                         await writeExternalFile(handle, JSON.stringify(initPayload, null, 2));
+                        state.masterKey = fileKey;
                     }
 
                     // Save the handle in IndexedDB
@@ -1388,14 +1735,14 @@ if ('serviceWorker' in navigator) {
             });
 
             if (handle) {
-                // Encrypt current in-memory notes to this file
-                const rawNotes = JSON.stringify(state.notes);
-                const enc = await window.CryptKeeper.encryptData(rawNotes, state.masterKey);
-                
                 // Derive file key
                 const fileSalt = window.CryptKeeper.generateSalt();
                 const fileKey = await window.CryptKeeper.deriveKey(state.masterPassword, fileSalt);
                 const fileEncVal = await window.CryptKeeper.encryptData("CryptKeeper-Session-Valid", fileKey);
+
+                // Encrypt current in-memory notes to this file using the new fileKey
+                const rawNotes = JSON.stringify(state.notes);
+                const enc = await window.CryptKeeper.encryptData(rawNotes, fileKey);
                 
                 const initPayload = {
                     version: 1,
@@ -1415,6 +1762,7 @@ if ('serviceWorker' in navigator) {
                 // Save the handle in IndexedDB
                 await idb.set('vault_file_handle', handle);
                 state.fileHandle = handle;
+                state.masterKey = fileKey;
                 
                 updateStorageUI();
                 showToast(`Vault file created: ${handle.name}`, "success");
